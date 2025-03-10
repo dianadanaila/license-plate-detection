@@ -1,77 +1,116 @@
-#Libraries
 import cv2
 import tkinter as tk
 import easyocr
+import numpy as np
 import matplotlib.pyplot as plt
 
+reader = easyocr.Reader(['en'], gpu=False)
 
+detected_plates = set()
+saved_plate_path = "salvat.jpeg"  
+
+# Initialize Tkinter window
 tab = tk.Tk()
+tab.title("License Plate Detection")
+tab.geometry("500x400")
+tab.resizable(width=False, height=False)
+tab.configure(background='#f0f0f0')
+
+#Instructions
+instructions_label = tk.Label(tab, text="Click 'Poza' to detect a license plate.\nClick 'Date' to read detected data.", bg='#f0f0f0', font=("Arial", 12))
+instructions_label.pack(pady=20)
 
 def screen():
-    
+    global saved_plate_path  
+
     haarcascade = cv2.CascadeClassifier("haarcascade_russian_plate_number.xml")
+    cap = cv2.VideoCapture(0) 
+    cap.set(3, 640)
+    cap.set(4, 480)
 
-    cap = cv2.VideoCapture(0)
-    cap.set(3,640) #latime
-    cap.set(4,480) #lungime
-    count=0
-    minArea= 500
-
+    minArea = 500
+    detected_text = None  # Store detected plate number
 
     while True:
         success, img = cap.read()
-        
+        if not success or img is None:  
+            print("Error: Failed to capture image.")
+            continue  
+
         imgGray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        
         plates = haarcascade.detectMultiScale(imgGray, 1.1, 4)
-        for (x,y,w,h) in plates:
-            area = w*h
+
+        for (x, y, w, h) in plates:
+            area = w * h
             if area > minArea:
-                cv2.rectangle(img, (x,y), (x+w, y+h), (255, 0, 0),2)
-                cv2.putText(img, "Plate Number", (x, y-5), cv2.FONT_HERSHEY_COMPLEX, 1,(0, 255 , 255), 2)
-                imgtst=img[y:y+h,x:x+w]
-                cv2.imshow("Zambiti",imgtst)
-                cv2.imwrite('poza.jpg',imgtst)  
-        cv2.imshow("Result", img)
+                # Extract the plate region
+                plate_img = img[y:y + h, x:x + w]
+                plate_gray = cv2.cvtColor(plate_img, cv2.COLOR_BGR2GRAY)
 
-        if cv2.waitKey(1) & 0xFF == ord('s'):
-            cv2.imwrite('images.jpeg', imgtst)
-            cv2.rectangle(img,(0,200),(640,300),(255,0,0),cv2.FILLED)
-            cv2.putText(img,"Salvat",(15,265),cv2.FONT_HERSHEY_COMPLEX,1,(0,255,255),2)
-            cv2.imshow("Final", img)
-            cv2.waitKey(500)
-            count=count+1
+                # OCR text detection
+                text = reader.readtext(plate_gray)
+
+                for _, detected_text, _ in text:
+                    if detected_text not in detected_plates:  # Avoid duplicates
+                        detected_plates.add(detected_text)
+                        print(f"Detected Plate: {detected_text}")  
+                        saved_plate_path = "salvat.jpeg"
+                        cv2.imwrite(saved_plate_path, plate_img)  # Save only plate region
+                        break  # Stop after first detected plate
+                
+                
+                cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                cv2.putText(img, "Plate Detected", (x, y - 5), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 255), 2)
+
+        cv2.imshow("Real-Time Plate Detection", img)
+
+        if cv2.waitKey(1) & 0xFF == ord('s'): 
             break
+
     cap.release()
-    cap.destroyAllWindows()
-    
-    
+    cv2.destroyAllWindows()
+
 def citit():
+    img = cv2.imread(saved_plate_path)
+    if img is None:
+        print("Error: Image 'salvat.jpeg' not found.")
+        return
 
-    img= cv2.imread('images.jpg')
+    text = reader.readtext(img)
 
-    reader= easyocr.Reader(['en'], gpu=False)
+    detected_texts_set = set()  
 
-    text =reader.readtext(img)
+    for bbox, detected_text, _ in text:
+        detected_texts_set.add(detected_text)  # Add detected text to the set
 
-    for t in text:
+        
+        (x1, y1) = bbox[0]  # Top-left corner
+        (x2, y2) = bbox[2]  # Bottom-right corner
 
-        print(t)
-        bbox, text, score=t
+        cv2.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+        cv2.putText(img, detected_text, (int(x1), int(y1) - 5), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 0, 0), 2)
 
-        cv2.rectangle (img, bbox[0],bbox[2], (0,255,0),1)
-        cv2.putText(img,text,bbox[0],cv2.FONT_HERSHEY_COMPLEX,1 ,(255, 0 ,0),3)
+ 
+    if detected_texts_set:
+        print("Plate ")
+        print(" ".join(detected_texts_set))
 
-        plt.imshow(img)
-        plt.show()
+    plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    plt.axis('off')  
+    plt.show()
 
-tab.geometry("500x500", )
-tab.resizable(width=False, height=False)
-tab.configure(background='black')
-a=tk.Button(tab,text='Poza', command =screen,bg='blue', fg= 'red')
-a.pack(padx=100, pady=20, side=tk.LEFT)
-b=tk.Button(tab,text='Date', command= citit,bg='blue', fg= 'red')
-b.pack(padx=100, pady=20, side=tk.RIGHT)
+
+
+# Buttons
+button_frame = tk.Frame(tab, bg='#f0f0f0')
+button_frame.pack(pady=30)
+
+a = tk.Button(button_frame, text='Poza', command=screen, bg='blue', fg='white', font=("Arial", 14), width=15)
+a.pack(side=tk.LEFT, padx=20)
+
+b = tk.Button(button_frame, text='Date', command=citit, bg='green', fg='white', font=("Arial", 14), width=15)
+b.pack(side=tk.RIGHT, padx=20)
+
 
 
 tab.mainloop()
